@@ -1,0 +1,41 @@
+# Environment variables
+.env
+
+# Database & SQLite files
+*.db
+*.sqlite
+*.sqlite3
+bot.db
+
+# Storage directories
+storage/downloads/*
+storage/temp/*
+storage/archives/*
+!storage/downloads/.gitkeep
+!storage/temp/.gitkeep
+!storage/archives/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Pytest & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
