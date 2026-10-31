@@ -73,44 +73,84 @@ async def handle_single_link(
     analysis = ContentDetector.analyze(items)
     user_id = message.from_user.id if message.from_user else 0
 
-    # Scenario A: Exactly one single file (video, image, doc, etc.)
-    if analysis.total_files == 1 and analysis.total_folders == 0:
-        single_item = items[0]
-        size_str = format_size(single_item.size)
-        cat_icon = single_item.icon
-        cat_name = single_item.category.value.capitalize()
-        await status_msg.edit_text(
-            f"{cat_icon} <b>Single {cat_name} Detected!</b>\n\n"
-            f"📄 <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
-            f"📦 <b>Size:</b> <code>{size_str}</code>\n\n"
-            f"🚀 <i>Adding {single_item.category.value} to download queue...</i>",
-            parse_mode="HTML",
-        )
-        try:
-            job_id = await queue_mgr.add_job(
-                user_id=user_id,
-                source_url=link.clean_url,
-                filename=single_item.filename,
-                file_size=single_item.size,
-                fs_id=single_item.fs_id,
-                category=single_item.category.value,
-                delivery_method=delivery_pref,
-                dir_path=result.current_dir,
-            )
-            pos = await queue_mgr.get_queue_position(job_id)
+    files = [it for it in items if not it.is_dir]
+    folders = [it for it in items if it.is_dir]
+
+    # Content-first: If all items are files (or unwrapped folder contents), queue them instantly without showing folder/browser
+    if len(folders) == 0 and len(files) > 0:
+        if len(files) == 1:
+            single_item = files[0]
+            size_str = format_size(single_item.size)
+            cat_icon = single_item.icon
+            cat_name = single_item.category.value.capitalize()
             await status_msg.edit_text(
-                f"✅ <b>Job Enqueued!</b>\n\n"
-                f"{cat_icon} <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
-                f"📦 <b>Size:</b> <code>{size_str}</code>\n"
-                f"🔢 <b>Queue Position:</b> #{pos if pos > 0 else 'Starting now'}\n\n"
-                f"<i>You will receive the file once download completes.</i>",
+                f"{cat_icon} <b>Single {cat_name} Detected!</b>\n\n"
+                f"📄 <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
+                f"📦 <b>Size:</b> <code>{size_str}</code>\n\n"
+                f"🚀 <i>Adding {single_item.category.value} to download queue...</i>",
                 parse_mode="HTML",
             )
-        except Exception as e:
-            await status_msg.edit_text(f"❌ <b>Error:</b> {escape_html(str(e))}", parse_mode="HTML")
-        return
+            try:
+                job_id = await queue_mgr.add_job(
+                    user_id=user_id,
+                    source_url=link.clean_url,
+                    filename=single_item.filename,
+                    file_size=single_item.size,
+                    fs_id=single_item.fs_id,
+                    category=single_item.category.value,
+                    delivery_method=delivery_pref,
+                    dir_path=result.current_dir,
+                )
+                pos = await queue_mgr.get_queue_position(job_id)
+                await status_msg.edit_text(
+                    f"✅ <b>Job Enqueued!</b>\n\n"
+                    f"{cat_icon} <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
+                    f"📦 <b>Size:</b> <code>{size_str}</code>\n"
+                    f"🔢 <b>Queue Position:</b> #{pos if pos > 0 else 'Starting now'}\n\n"
+                    f"<i>You will receive the file once download completes.</i>",
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                await status_msg.edit_text(f"❌ <b>Error:</b> {escape_html(str(e))}", parse_mode="HTML")
+            return
+        else:
+            total_size = sum(f.size for f in files)
+            await status_msg.edit_text(
+                f"🚀 <b>Found {len(files)} files ({format_size(total_size)})!</b>\n\n"
+                f"<i>Queueing all content for download instantly...</i>",
+                parse_mode="HTML",
+            )
+            enqueued = 0
+            errors = []
+            for it in files:
+                try:
+                    await queue_mgr.add_job(
+                        user_id=user_id,
+                        source_url=link.clean_url,
+                        filename=it.filename,
+                        file_size=it.size,
+                        fs_id=it.fs_id,
+                        category=it.category.value,
+                        delivery_method=delivery_pref,
+                        dir_path=result.current_dir,
+                    )
+                    enqueued += 1
+                except Exception as e:
+                    errors.append(str(e))
+                    break
 
-    # Scenario B, C, D, E: Display Interactive File Browser
+            summary = (
+                f"✅ <b>{enqueued}/{len(files)} Files Enqueued!</b>\n\n"
+                f"📦 <b>Total Size:</b> {format_size(total_size)}\n"
+                f"📂 <b>Path:</b> <code>{escape_html(result.current_dir if result.current_dir != '/' else 'Root')}</code>\n\n"
+                f"<i>Files will be delivered automatically as downloads finish.</i>"
+            )
+            if errors:
+                summary += f"\n\n⚠️ <i>Queue note: {escape_html(errors[0])}</i>"
+            await status_msg.edit_text(summary, parse_mode="HTML")
+            return
+
+    # Scenario: Multiple folders exist (user needs to choose folder)
     session = browser_sessions.create_session(
         user_id=user_id,
         source_url=link.clean_url,
