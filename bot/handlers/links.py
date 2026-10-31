@@ -55,7 +55,7 @@ async def handle_single_link(
     status_msg = await message.answer("🔍 <b>Analyzing TeraBox link...</b>", parse_mode="HTML")
 
     client = TeraBoxClient()
-    result = await client.get_share_info(link.clean_url, password=link.password)
+    result = await client.get_content_unwrapped(link.clean_url, password=link.password)
 
     if not result.success:
         await status_msg.edit_text(
@@ -73,31 +73,34 @@ async def handle_single_link(
     analysis = ContentDetector.analyze(items)
     user_id = message.from_user.id if message.from_user else 0
 
-    # Scenario A: Exactly one single video
-    if analysis.scenario == ContentScenario.SINGLE_VIDEO:
-        video_item = items[0]
-        size_str = format_size(video_item.size)
+    # Scenario A: Exactly one single file (video, image, doc, etc.)
+    if analysis.total_files == 1 and analysis.total_folders == 0:
+        single_item = items[0]
+        size_str = format_size(single_item.size)
+        cat_icon = single_item.icon
+        cat_name = single_item.category.value.capitalize()
         await status_msg.edit_text(
-            f"🎬 <b>Single Video Detected!</b>\n\n"
-            f"📄 <b>File:</b> <code>{escape_html(video_item.filename)}</code>\n"
+            f"{cat_icon} <b>Single {cat_name} Detected!</b>\n\n"
+            f"📄 <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
             f"📦 <b>Size:</b> <code>{size_str}</code>\n\n"
-            f"🚀 <i>Adding video to download queue...</i>",
+            f"🚀 <i>Adding {single_item.category.value} to download queue...</i>",
             parse_mode="HTML",
         )
         try:
             job_id = await queue_mgr.add_job(
                 user_id=user_id,
                 source_url=link.clean_url,
-                filename=video_item.filename,
-                file_size=video_item.size,
-                fs_id=video_item.fs_id,
-                category="video",
+                filename=single_item.filename,
+                file_size=single_item.size,
+                fs_id=single_item.fs_id,
+                category=single_item.category.value,
                 delivery_method=delivery_pref,
+                dir_path=result.current_dir,
             )
             pos = await queue_mgr.get_queue_position(job_id)
             await status_msg.edit_text(
                 f"✅ <b>Job Enqueued!</b>\n\n"
-                f"🎬 <b>File:</b> <code>{escape_html(video_item.filename)}</code>\n"
+                f"{cat_icon} <b>File:</b> <code>{escape_html(single_item.filename)}</code>\n"
                 f"📦 <b>Size:</b> <code>{size_str}</code>\n"
                 f"🔢 <b>Queue Position:</b> #{pos if pos > 0 else 'Starting now'}\n\n"
                 f"<i>You will receive the file once download completes.</i>",

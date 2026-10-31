@@ -115,11 +115,11 @@ async def handle_browser_callback(callback: CallbackQuery, queue_mgr: QueueManag
 
                 await callback.answer("📂 Opening folder...")
                 client = TeraBoxClient()
-                res = await client.get_share_info(session.source_url, dir_path=target_path)
+                res = await client.get_content_unwrapped(session.source_url, dir_path=target_path)
 
                 if res.success:
-                    session.current_dir = target_path
-                    session.dir_history.append(target_path)
+                    session.current_dir = res.current_dir
+                    session.dir_history.append(res.current_dir)
                     session.all_items = res.items
                     session.selected_fs_ids.clear()
                     session.current_page = 1

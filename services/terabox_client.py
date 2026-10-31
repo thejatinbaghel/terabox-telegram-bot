@@ -485,3 +485,66 @@ class TeraBoxClient:
                     all_files.append((it, rel_path))
 
         return all_files
+
+    async def get_content_unwrapped(
+        self,
+        link_or_surl: str,
+        password: Optional[str] = None,
+        dir_path: str = "/",
+        max_depth: int = 10,
+    ) -> ShareInfoResult:
+        """
+        Fetches files and directories from TeraBox share link, automatically unwrapping
+        single folder hierarchies so that content (videos, images, files) is returned instantly.
+        Folders are only retained and shown if there are MULTIPLE folders to choose from.
+        """
+        res = await self.get_share_info(link_or_surl, password=password, dir_path=dir_path)
+        if not res.success or not res.items:
+            return res
+
+        depth = 0
+        while depth < max_depth:
+            folders = [it for it in res.items if it.is_dir]
+            files = [it for it in res.items if not it.is_dir]
+
+            # Rule 1: Exactly one folder and zero files -> auto-enter that folder instantly
+            if len(folders) == 1 and len(files) == 0:
+                target_folder = folders[0]
+                next_path = target_folder.path if target_folder.path else f"{res.current_dir.rstrip('/')}/{target_folder.filename}"
+                logger.info(f"Auto-unwrapping single folder '{target_folder.filename}' -> {next_path}")
+                sub_res = await self.get_share_info(link_or_surl, password=password, dir_path=next_path)
+                if sub_res.success and sub_res.items:
+                    if not sub_res.title and res.title:
+                        sub_res.title = res.title
+                    res = sub_res
+                    depth += 1
+                    continue
+                else:
+                    break
+
+            # Rule 2: Exactly one folder alongside files -> unwrap the single folder and merge content
+            elif len(folders) == 1 and len(files) > 0:
+                target_folder = folders[0]
+                next_path = target_folder.path if target_folder.path else f"{res.current_dir.rstrip('/')}/{target_folder.filename}"
+                logger.info(f"Unwrapping single folder '{target_folder.filename}' alongside {len(files)} files")
+                sub_res = await self.get_share_info(link_or_surl, password=password, dir_path=next_path)
+                if sub_res.success and sub_res.items:
+                    merged_items = files + sub_res.items
+                    res = ShareInfoResult(
+                        success=True,
+                        errno=0,
+                        errmsg="",
+                        items=merged_items,
+                        shareid=res.shareid or sub_res.shareid,
+                        uk=res.uk or sub_res.uk,
+                        title=res.title or sub_res.title,
+                        current_dir=res.current_dir,
+                    )
+                break
+
+            # Rule 3: Multiple folders (len(folders) > 1) or zero folders (len(folders) == 0)
+            # Only show folders if there are multiple folders; otherwise all items are content!
+            else:
+                break
+
+        return res

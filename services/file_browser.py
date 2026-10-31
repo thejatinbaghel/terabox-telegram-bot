@@ -106,14 +106,18 @@ class FileBrowserUI:
         selected_items = [i for i in session.all_items if i.fs_id in session.selected_fs_ids]
         selected_size = sum(i.size for i in selected_items)
 
+        summary_lines = [f"• Files: <code>{analysis.total_files}</code>"]
+        if analysis.total_folders > 0:
+            summary_lines.append(f"• Folders: <code>{analysis.total_folders}</code>")
+        summary_lines.append(f"• Total Size: <code>{analysis.formatted_total_size}</code>")
+        summary_block = "\n".join(summary_lines)
+
         text = (
             f"📦 <b>TeraBox Content Found</b>\n"
             f"<b>Title:</b> {escape_html(session.title)}\n"
             f"<b>Path:</b> <code>{escape_html(crumbs)}</code>\n\n"
             f"📊 <b>Summary:</b>\n"
-            f"• Files: <code>{analysis.total_files}</code>\n"
-            f"• Folders: <code>{analysis.total_folders}</code>\n"
-            f"• Total Size: <code>{analysis.formatted_total_size}</code>\n"
+            f"{summary_block}\n"
         )
 
         if session.selected_fs_ids:
